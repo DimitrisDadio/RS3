@@ -7,17 +7,33 @@ library(parallel)
 
 ######################
 ######Evaluation Method through simple cross ranking######
-mean_rank <- function(pred, test, user.u){
-  #pred and test are triples in the form of data_frames.
+mean_rank <- function(pred, test, user.u = NULL){
+  #pred and test are triples both in the form of data_frames OR matrices
   #function checks where the consumed items by user.u (listed in test_triple) 
   ##are ranked in the pred_triple which is the recommendation output
+  if(is.data.frame(pred) ==T & is.data.frame(test) == T){
+    pred_u <- pred[pred$user == user.u,]
+    item_recom <- pred_u[order(pred_u$rating, decreasing = T), "item"]
+    test_u <- test[test$user == user.u & test$rating != 0, "item"]
+    rawmean <- mean(match(test_u, item_recom), na.rm = T)
+    idealmean <- (length(test_u) + 1)/2
+    meanrank <- rawmean - idealmean
+  }
   
-  pred_u <- pred[pred$user == user.u,]
-  item_recom <- pred_u[order(pred_u$rating, decreasing = T), "item"]
-  test_u <- test[test$user == user.u & test$rating != 0, "item"]
-  rawmean <- mean(match(test_u, item_recom), na.rm = T)
-  idealmean <- (length(test_u) + 1)/2
-  meanrank <- rawmean - idealmean
+  else{
+    #assume pred and test is in matrix form
+    print("using matrix form")
+    recommended_matrix <- t(apply(pred, MARGIN = 1, FUN = order, decreasing = T)) #ordered recommendation list for each user
+    meanrank <- sapply(1:dim(test)[1], FUN = function(u){
+      test_u <- as.vector(test[u,])
+      test_u <- (1:length(test_u))[test_u!= 0 ]
+      item_recom <- as.vector(recommended_matrix[u,])
+      rawmean <- mean(match(test_u, item_recom), na.rm = T)
+      idealmean <- (length(test_u) + 1)/2
+      meanrank <- rawmean - idealmean
+    })
+  }
+  
   return(meanrank)
   
   #Note NaNs are a result of the users in the test set 
@@ -28,18 +44,37 @@ mean_rank <- function(pred, test, user.u){
 ##########
 
 opt_rank <- function(pred, test, user.u){
-  #pred and test are triples in the form of data_frames.
+  #pred and test are triples both in the form of data_frames OR matrices
   #optimistic rank: similar to eval_ranking but we take 
   #the first(highest) ranked success in the recommendation list
+  if(is.data.frame(pred) ==T & is.data.frame(test) == T){
+    pred_u <- pred[pred$user == user.u,]
+    item_recom <- pred_u[order(pred_u$rating, decreasing = T), "item"]
+    test_u <- test[test$user == user.u & test$rating != 0, "item"]
+    
+    ranks <- match(test_u,item_recom)
+    
+    if (all(is.na(ranks)) == T){ return(NA) }
+    else{ min(ranks, na.rm = T) } 
+  }
   
-  pred_u <- pred[pred$user == user.u,]
-  item_recom <- pred_u[order(pred_u$rating, decreasing = T), "item"]
-  test_u <- test[test$user == user.u & test$rating != 0, "item"]
-  
-  ranks <- match(test_u,item_recom)
-  
-  if (all(is.na(ranks)) == T){ return(NA) }
-  else{ min(ranks, na.rm = T) }
+  else{
+    #assume pred and test is in matrix form
+    print("using matrix form")
+    recommended_matrix <- t(apply(pred, MARGIN = 1, FUN = order, decreasing = T)) #ordered recommendation list for each user
+    
+    optrank<- sapply(1:dim(test)[1], FUN = function(u){
+      test_u <- as.vector(test[u,])
+      test_u <- (1:length(test_u))[test_u!= 0 ]
+      item_recom <- as.vector(recommended_matrix[u,])
+      ranks <- match(test_u, item_recom)
+      if (all(is.na(ranks)) == T){ return(NA) }
+      else{ min(ranks, na.rm = T) } 
+      
+    })
+    return(optrank)
+    
+  }
   #Note we drop Inf values - a result of no matches in the recom lists
   #having no rated items i.e. all items have rating 0
   
@@ -47,61 +82,116 @@ opt_rank <- function(pred, test, user.u){
 
 
 hit_ratio <- function(pred, test, user.u, topN = 100){
-  #pred and test are triples in the form of data_frames.
+  #pred and test are triples both in the form of data_frames OR matrices
   #HR measures whether the ground truth item is present on the ranked list
   #topN is the top number of items of the recommended list that is kept for evaluation
   
-  pred_u <- pred[pred$user == user.u,]
-  item_recom <- pred_u[order(pred_u$rating, decreasing = T), "item"]
-  test_u <- test[test$user == user.u & test$rating != 0, "item"]
+  if(is.data.frame(pred) ==T & is.data.frame(test) == T){
+    pred_u <- pred[pred$user == user.u,]
+    item_recom <- pred_u[order(pred_u$rating, decreasing = T), "item"]
+    test_u <- test[test$user == user.u & test$rating != 0, "item"]
+    
+    HR <- mean(test_u %in% (item_recom[1:topN]))
+  }
+  else{
+    #assume pred and test is in matrix form
+    print("using matrix form")
+    recommended_matrix <- t(apply(pred, MARGIN = 1, FUN = order, decreasing = T)) #ordered recommendation list for each user
+    HR <- sapply(1:dim(test)[1], FUN = function(u){
+      test_u <- as.vector(test[u,])
+      test_u <- (1:length(test_u))[test_u!= 0 ] #items in test set
+      item_recom <- as.vector(recommended_matrix[u,])
+      mean(test_u %in% (item_recom[1:topN]))
   
-  HR <- mean(test_u %in% (item_recom[1:topN]))
+    })
+  }
+  
+  return(HR)
 }
 
 DCG <- function(y) y[1] + sum(y[-1]/log(1+(2:length(y)), base = 2)) #used to compute nDCG below
 
 nDCG <- function(pred, test, user.u, topN = 100){
-  #pred and test are triples in the form of data_frames.
+  #pred and test are triples both in the form of data_frames OR matrices
   #nDCG: Normalised discounted cumulative gain (well known measure)
   #accounts for the position of the ground truth items on the ranked list
   
-  pred_u <- pred[pred$user == user.u,]
-  item_recom <- pred_u[order(pred_u$rating, decreasing = T), "item"]
-  item_recom <- item_recom[1:topN]
-  test_u <- test[test$user == user.u & test$rating != 0, "item"]
-  
-  rel <- as.integer(item_recom %in% test_u)
-  #ideal_rel <- rev(sort(rel))
-  ideal_rel <- rep(1, length.out = length(test_u))
-  
-  DCG(rel)/DCG(ideal_rel)
+  if(is.data.frame(pred) ==T & is.data.frame(test) == T){
+    pred_u <- pred[pred$user == user.u,]
+    item_recom <- pred_u[order(pred_u$rating, decreasing = T), "item"]
+    item_recom <- item_recom[1:topN]
+    test_u <- test[test$user == user.u & test$rating != 0, "item"]
+    
+    rel <- as.integer(item_recom %in% test_u)
+    #ideal_rel <- rev(sort(rel))
+    ideal_rel <- rep(1, length.out = length(test_u))
+    ndcg <- DCG(rel)/DCG(ideal_rel)
+    
+  }
+  else{
+    #assume pred and test is in matrix form
+    print("using matrix form")
+    recommended_matrix <- t(apply(pred, MARGIN = 1, FUN = order, decreasing = T)) #ordered recommendation list for each user
+    ndcg <- sapply(1:dim(test)[1], FUN = function(u){
+      test_u <- as.vector(test[u,])
+      test_u <- (1:length(test_u))[test_u!= 0 ]  #items in test set
+      item_recom <- as.vector(recommended_matrix[u,])[1:topN]
+      
+      rel <- as.integer(item_recom %in% test_u)
+      ideal_rel <- rep(1, length.out = length(test_u))
+      ndcg <- DCG(rel)/DCG(ideal_rel)
+    })
+  }
+  return(ndcg)
   #if hit ratio = 0, nDCG will naturally return NaN because rel and ideal_rev are
   #vectors of 0s
 }
 
 lift_index <- function(pred, test, user.u, topN = 100, n_deciles = 10){
-  #pred and test are triples in the form of data_frames.
+  #pred and test are triples both in the form of data_frames OR matrices
   #n_deciles default 10: assumes the ranked list is divided into 10 equal deciles
   #lift_index uses a linear reduction factor
   #accounts for the position of the ground truth items on the ranked list
   
-  pred_u <- pred[pred$user == user.u,]
-  item_recom <- pred_u[order(pred_u$rating, decreasing = T), "item"]
-  item_recom <- item_recom[1:topN]
-  test_u <- test[test$user == user.u & test$rating != 0, "item"]
-  
-  hr <- as.integer(item_recom %in% test_u)
-  if(sum(hr) != 0){
-    weight <- seq(to = 1/n_deciles,from = 1,length.out = n_deciles)
-    nmembers <- ceiling(length(item_recom)/n_deciles)
-    hr_split <- split(hr, ceiling(seq_along(hr)/nmembers))
-    lift_index <- sum(sapply(1:n_deciles, FUN = function(x){
-      sum(weight[x] * hr_split[[x]])
-    } ))/sum(hr)
+  if(is.data.frame(pred) ==T & is.data.frame(test) == T){
+    pred_u <- pred[pred$user == user.u,]
+    item_recom <- pred_u[order(pred_u$rating, decreasing = T), "item"]
+    item_recom <- item_recom[1:topN]
+    test_u <- test[test$user == user.u & test$rating != 0, "item"]
+    
+    hr <- as.integer(item_recom %in% test_u)
+    if(sum(hr) != 0){
+      weight <- seq(to = 1/n_deciles,from = 1,length.out = n_deciles)
+      nmembers <- ceiling(length(item_recom)/n_deciles)
+      hr_split <- split(hr, ceiling(seq_along(hr)/nmembers))
+      lift_index <- sum(sapply(1:n_deciles, FUN = function(x){
+        sum(weight[x] * hr_split[[x]])
+      } ))/sum(hr)
+    }
+    else{lift_index <- 0}
   }
-  else{lift_index <- 0}
+  else{
+    #assume pred and test is in matrix form
+    print("using matrix form")
+    recommended_matrix <- t(apply(pred, MARGIN = 1, FUN = order, decreasing = T)) #ordered recommendation list for each user
+    lift_index <- sapply(1:dim(test)[1], FUN = function(u){
+      test_u <- as.vector(test[u,])
+      test_u <- (1:length(test_u))[test_u!= 0 ]
+      item_recom <- as.vector(recommended_matrix[u,])[1:topN]
+      
+      hr <- as.integer(item_recom %in% test_u)
+      if(sum(hr) != 0){
+        weight <- seq(to = 1/n_deciles,from = 1,length.out = n_deciles)
+        nmembers <- ceiling(length(item_recom)/n_deciles)
+        hr_split <- split(hr, ceiling(seq_along(hr)/nmembers))
+        lift_index <- sum(sapply(1:n_deciles, FUN = function(x){
+          sum(weight[x] * hr_split[[x]])
+        } ))/sum(hr)
+      }
+      else{lift_index <- 0}
+    })
+  }
   return(lift_index)
-  
 }
 
 
@@ -128,7 +218,7 @@ AUC_user <- function(pred, test, user.u, topN = 100){
     auc_user <- mean(auc_user) #mean across all the good items
   }
   if (length(test_u) ==0){auc_user <- 0.5}
-  else( auc_user <- 0)
+  else( auc_user <- 0 )#no good items are in the topN recommendation
 
   return(auc_user)
   
