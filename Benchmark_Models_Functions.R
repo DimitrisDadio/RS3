@@ -73,7 +73,7 @@ global_popular <- function(train , test , eval_method = mean_rank,...){
     #test is in matrix form. Use more efficient function to compute results
     ranking_results <- eval_method(pred = pred_matrix, test = test)
   }
-  return(list("evaluation_results" = ranking_results,"pred" = pred, "pred_matrix" = pred_matrix) )
+  return(list("evaluation_results" = ranking_results, "pred_matrix" = pred_matrix) )
 }
 
 #####
