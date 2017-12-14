@@ -373,12 +373,20 @@ CFMF <- function(train,f, loss_fn = loss_fn, lambda = 1, iter =15, confidence = 
 
 rank.CFMF <- function(train  , test , f = 50, lambda = 0.1, eval_method = mean_rank,iter=15, confidence = F, imp_mat = NULL,...){
   #train is a ratings matrix: user x item
-  #test is a data.frame triples (user,item,rating) 
-  #This function evaluates the predictions according to e.g. mean ranking or optimistic ranking
+  #test is a data.frame triples (user,item,rating) OR a ratings matrix (preferred: faster)
+  #This function evaluates the predictions according to e.g. mean ranking, optimistic ranking, etc.
   CFMF_fit <- CFMF(train , f , loss_fn, lambda, iter = iter , confidence = confidence, imp_mat = imp_mat)
-  pred <- setNames(melt(CFMF_fit$fit$reduced), c('user','item','rating'))
-  print("evaluating ranking")
-  ranking_results <- sapply(sort(unique(pred$user)), FUN = eval_method, pred = pred, test = test, ...)
+  if(is.data.frame(test) == T){
+    pred <- setNames(melt(CFMF_fit$fit$reduced), c('user','item','rating'))
+    print("evaluating ranking")
+    ranking_results <- sapply(sort(unique(pred$user)), FUN = eval_method, pred = pred, test = test, ...)
+  }
+  else{
+    #both train and test are matrices (fast computation used)
+    pred <- CFMF_fit$fit$reduced
+    ranking_results <- eval_method(pred=pred,test=test,...)
+  }
+  
   return(list("evaluation_results" = ranking_results,"pred" = pred, "CFMF_fit" = CFMF_fit) )
   
 }
@@ -438,7 +446,7 @@ kfoldcv.CFMF <- function(fulldata, k = 5, seed = 123, f ,lambda = 0.1,iter=10, e
                     .export = c("rank.CFMF", "CFMF", "matreduce_svd", "loss_fn", "mean_rank")) %dopar% {
     testData <- fulldata
     testData[foldmat != i] <- 0 
-    testData <- setNames(melt(testData), c('user','item','rating')) #test in triple form
+    #testData <- setNames(melt(testData), c('user','item','rating')) #test in triple form
     trainData <- fulldata
     trainData[foldmat == i] <- 0
     implicitMat <- imp_mat
