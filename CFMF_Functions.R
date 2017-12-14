@@ -412,10 +412,10 @@ optimise.CFMF <- function(fulldata, k = 5, seed = 123, f ,lambda = c(0.1,0.5,1,2
                         implicitMat <- imp_mat
                         implicitMat[foldmat == i] <- 0
                         
-                        CFMF <- CFMF( train = trainData, f = f , loss_fn =loss_fn,  lambda= lambdavalue,
+                        CFMFfit <- CFMF( train = trainData, f = f , loss_fn =loss_fn,  lambda= lambdavalue,
                                       iter = iter, confidence = confidence, imp_mat = implicitMat,
                                       ncoresB = ncoresB )$fit
-                        rmse <- sqrt(mean(((testData - CFMF$reduced)[foldmat == i])^2))
+                        rmse <- sqrt(mean(((testData - CFMFfit$reduced)[foldmat == i])^2))
                         cbind.data.frame(chain = i,rmse)
                         
                       }
