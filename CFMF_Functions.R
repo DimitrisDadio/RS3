@@ -416,11 +416,17 @@ optimise.CFMF <- function(fulldata, k = 5, seed = 123, f ,lambda = c(0.1,0.5,1,2
                                       iter = iter, confidence = confidence, imp_mat = implicitMat,
                                       ncoresB = ncoresB )$fit
                         rmse <- sqrt(mean(((testData - CFMFfit$reduced)[foldmat == i])^2))
+                        gc(reset = T)
                         cbind.data.frame(chain = i,rmse)
                         
+                        
                       }
+    
     print(paste("rmse for lambda = ", lambdavalue, "is ", mean(result$rmse)))
     rmse_mean <- c(rmse_mean, mean(result$rmse))
+    rm(result)
+    gc(reset = T)
+    
   }
   min_rmse <- min(rmse_mean)
   lambda.opt <- lambda[rmse_mean == min_rmse]
